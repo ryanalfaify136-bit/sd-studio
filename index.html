@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+  <meta name="googlebot" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <title>SD Studio</title>
+  <style>
+    :root { --ink: #141218; --muted: #6b6773; --line: #e4e2e8; --bg: #f6f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+    [hidden] { display: none !important; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--line); background: #fff; }
+    header h1 { margin: 0; font-size: 18px; }
+    header small { color: var(--muted); font-weight: 400; }
+    header button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; }
+    main { display: grid; grid-template-columns: 400px 1fr; gap: 24px; padding: 24px; max-width: 1400px; margin: 0 auto; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 14px; } }
+    .panel { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border-radius: 10px; padding: 4px; margin-bottom: 16px; }
+    .tabs button { border: 0; background: transparent; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; }
+    .tabs button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+    textarea, input[type=number], input[type=password] { width: 100%; padding: 10px 12px; font: inherit; font-size: 14px; border: 1px solid #d6d3dc; border-radius: 10px; background: #fff; }
+    textarea { resize: vertical; min-height: 96px; }
+    .drop { border: 2px dashed #d6d3dc; border-radius: 12px; padding: 18px; text-align: center; color: var(--muted); font-size: 14px; cursor: pointer; }
+    .drop.over { border-color: var(--ink); color: var(--ink); }
+    .drop img { max-width: 100%; max-height: 220px; border-radius: 8px; display: block; margin: 0 auto; }
+    .linkbtn { margin-top: 8px; font-size: 13px; color: var(--muted); background: none; border: 0; cursor: pointer; text-decoration: underline; padding: 0; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    input[type=range] { width: 100%; }
+    .go { margin-top: 18px; width: 100%; padding: 14px; border: 0; border-radius: 12px; background: var(--ink); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+    .go:disabled { opacity: 0.55; cursor: not-allowed; }
+    .note { margin-top: 14px; padding: 12px; border-radius: 10px; font-size: 14px; line-height: 1.45; }
+    .note.err { background: #fef3f2; color: #b42318; }
+    .note.info { background: #f2f4f7; color: #344054; }
+    .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+    .bar > div { height: 100%; width: 0; background: var(--ink); transition: width 0.2s; }
+    .stage { min-height: 540px; display: grid; place-items: center; }
+    .empty { color: var(--muted); text-align: center; max-width: 420px; line-height: 1.5; }
+    .result canvas { max-width: 100%; height: auto; border-radius: 12px; display: block; margin: 0 auto; }
+    .actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+    .actions a, .actions button { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); font-size: 14px; text-decoration: none; cursor: pointer; }
+    .spinner { width: 42px; height: 42px; border: 4px solid var(--line); border-top-color: var(--ink); border-radius: 50%; animation: spin 0.9s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .history { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+    .history img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+    .history img:hover { border-color: var(--ink); }
+    .i2i-only { display: none; }
+    body.i2i .i2i-only { display: block; }
+    #gate { min-height: 100vh; display: grid; place-items: center; }
+    #gate form { width: min(360px, 92vw); }
+    #gate h2 { margin: 0 0 6px; font-size: 22px; }
+    #gate p { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <!-- Password gate -->
+  <section id="gate">
+    <form class="panel" id="gateForm">
+      <h2>SD Studio</h2>
+      <p>This site is private. Enter the password to continue.</p>
+      <label for="pw">Password</label>
+      <input id="pw" type="password" autocomplete="current-password" required autofocus />
+      <button class="go" type="submit">Enter</button>
+      <div class="note err" id="gateErr" hidden>Wrong password.</div>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <header>
+      <h1>SD Studio <small>· Stable Diffusion running in your browser</small></h1>
+      <button id="lock" type="button">Lock</button>
+    </header>
+
+    <main>
+      <form class="panel" id="form">
+        <div class="tabs">
+          <button type="button" class="active" data-mode="t2i">Text → Image</button>
+          <button type="button" data-mode="i2i">Image → Image</button>
+        </div>
+
+        <div class="i2i-only">
+          <label>Source image</label>
+          <div class="drop" id="drop">
+            <input type="file" id="file" accept="image/*" hidden />
+            <div id="dropText">Drop an image here or click to choose</div>
+          </div>
+          <button type="button" class="linkbtn" id="clearImg" hidden>Remove image</button>
+        </div>
+
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt" placeholder="A cinematic photo of a knight at sunset, highly detailed, soft rim light"></textarea>
+        <div class="hint">Describe it in English. Short, concrete prompts work best with this fast model.</div>
+
+        <div class="i2i-only">
+          <label for="strength">How much to change the image: <span id="strengthVal">50%</span></label>
+          <input type="range" id="strength" min="0" max="1" step="0.05" value="0.5" />
+          <div class="hint">Low keeps your picture close to the original; high follows the prompt more. Try a few values with the same seed.</div>
+        </div>
+
+        <label for="seed">Seed (0 = random)</label>
+        <input type="number" id="seed" value="0" min="0" />
+
+        <button class="go" id="go" type="submit">Load model &amp; generate</button>
+        <div id="loadBox" hidden>
+          <div class="hint" id="loadText">Downloading the model…</div>
+          <div class="bar"><div id="loadBar"></div></div>
+        </div>
+        <div class="note info" id="firstRun">
+          The first time, your browser downloads the model once (about 2.5 GB) and keeps it for next time.
+          Images are made on your own device, 512×512, free and private: nothing is uploaded.
+        </div>
+        <div class="note err" id="error" hidden></div>
+      </form>
+
+      <section class="panel">
+        <div class="stage" id="stage"><div class="empty">Your image will appear here.</div></div>
+        <div class="history" id="history"></div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    // ------------------------------------------------------------------
+    // Settings
+    // ------------------------------------------------------------------
+    // SHA-256 of the site password. Change it with:  printf %s 'new password' | sha256sum
+    const PASSWORD_SHA256 = "eb234e5a318c82870365df973e1e1db283a446173f18918028dfbb7533160687";
+    const MODEL_BASE = "https://huggingface.co/schmuell/sd-turbo-ort-web/resolve/main";
+    const ORT_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.webgpu.min.mjs";
+    const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
+    const CACHE_NAME = "sd-studio-models-v1";
+    const MODELS = {
+      text_encoder: { path: "text_encoder/model.onnx", mb: 681, opt: { freeDimensionOverrides: { batch_size: 1 } } },
+      unet: { path: "unet/model.onnx", mb: 1733, opt: { freeDimensionOverrides: { batch_size: 1, num_channels: 4, height: 64, width: 64, sequence_length: 77 } } },
+      vae_decoder: { path: "vae_decoder/model.onnx", mb: 99, opt: { freeDimensionOverrides: { batch_size: 1, num_channels_latent: 4, height_latent: 64, width_latent: 64 } } },
+      vae_encoder: { path: "vae_encoder/model.onnx", mb: 68, opt: { freeDimensionOverrides: { batch_size: 1, num_channels: 3, height: 512, width: 512 } } },
+    };
+    const VAE_SCALE = 0.18215;
+
+    const $ = (id) => document.getElementById(id);
+
+    // ------------------------------------------------------------------
+    // Password gate (keeps casual visitors out; the site is also hidden from search engines)
+    // ------------------------------------------------------------------
+    const sha256 = async (s) =>
+      [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))]
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+    const unlock = () => { $("gate").hidden = true; $("app").hidden = false; };
+    try { if (sessionStorage.getItem("sds-ok") === PASSWORD_SHA256) unlock(); } catch {}
+    $("gateForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if ((await sha256($("pw").value)) === PASSWORD_SHA256) {
+        try { sessionStorage.setItem("sds-ok", PASSWORD_SHA256); } catch {}
+        unlock();
+      } else $("gateErr").hidden = false;
+    });
+    $("lock").addEventListener("click", () => { try { sessionStorage.removeItem("sds-ok"); } catch {} location.reload(); });
+
+    // ------------------------------------------------------------------
+    // UI
+    // ------------------------------------------------------------------
+    let mode = "t2i";
+    let sourceImage = null; // ImageBitmap
+    document.querySelectorAll(".tabs button").forEach((b) =>
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+        mode = b.dataset.mode;
+        document.body.classList.toggle("i2i", mode === "i2i");
+      })
+    );
+    $("strength").addEventListener("input", (e) => ($("strengthVal").textContent = Math.round(Number(e.target.value) * 100) + "%"));
+
+    const showError = (msg) => { $("error").textContent = msg || ""; $("error").hidden = !msg; };
+    async function setSource(blob) {
+      if (!blob || !blob.type.startsWith("image/")) return showError("Choose an image file.");
+      showError("");
+      sourceImage = await createImageBitmap(blob);
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(blob);
+      $("dropText").replaceChildren(img);
+      $("clearImg").hidden = false;
+    }
+    const drop = $("drop");
+    drop.addEventListener("click", () => $("file").click());
+    $("file").addEventListener("change", (e) => setSource(e.target.files[0]));
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); setSource(e.dataTransfer.files[0]); });
+    $("clearImg").addEventListener("click", () => {
+      sourceImage = null; $("file").value = ""; $("clearImg").hidden = true;
+      $("dropText").textContent = "Drop an image here or click to choose";
+    });
+
+    // ------------------------------------------------------------------
+    // Model loading (downloaded once, then kept in the browser cache)
+    // ------------------------------------------------------------------
+    let ort, tokenizer;
+    const sessions = {};
+
+    async function openCache() { try { return await caches.open(CACHE_NAME); } catch { return null; } }
+
+    async function fetchModel(name, onBytes) {
+      const url = `${MODEL_BASE}/${MODELS[name].path}`;
+      const cache = await openCache();
+      const hit = cache && (await cache.match(url));
+      if (hit) { onBytes(MODELS[name].mb * 1e6); return new Uint8Array(await hit.arrayBuffer()); }
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Model download failed (${res.status}).`);
+      const total = Number(res.headers.get("content-length")) || MODELS[name].mb * 1e6;
+      const out = new Uint8Array(total);
+      const reader = res.body.getReader();
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        out.set(value, got); got += value.length; onBytes(value.length);
+      }
+      const bytes = got === total ? out : out.slice(0, got);
+      if (cache) { try { await cache.put(url, new Response(bytes)); } catch { /* storage full: still works this visit */ } }
+      return bytes;
+    }
+
+    async function ensureLoaded(names) {
+      const missing = names.filter((n) => !sessions[n]);
+      if (!missing.length) return;
+      const adapter = "gpu" in navigator ? await navigator.gpu.requestAdapter({ powerPreference: "high-performance" }) : null;
+      if (!adapter) {
+        throw new Error("This browser can't run the model: it needs WebGPU. Use a recent Chrome or Edge on a computer (or Chrome on a recent Android phone).");
+      }
+      if (!adapter.features.has("shader-f16")) {
+        throw new Error("This device's graphics chip doesn't support 16-bit WebGPU maths (shader-f16), which the model needs. Try a recent Chrome or Edge on a computer with an NVIDIA, AMD, Intel or Apple graphics chip.");
+      }
+      if (!ort) {
+        ort = (await import(ORT_URL)).default ?? (await import(ORT_URL));
+        ort.env.wasm.numThreads = 1;
+      }
+      if (!tokenizer) {
+        const { AutoTokenizer } = await import(TRANSFORMERS_URL);
+        tokenizer = await AutoTokenizer.from_pretrained("Xenova/clip-vit-base-patch16");
+        tokenizer.pad_token_id = 0;
+      }
+      const totalBytes = missing.reduce((s, n) => s + MODELS[n].mb * 1e6, 0);
+      let doneBytes = 0;
+      $("loadBox").hidden = false;
+      const tick = (b) => {
+        doneBytes += b;
+        const pct = Math.min(100, (doneBytes / totalBytes) * 100);
+        $("loadBar").style.width = pct.toFixed(1) + "%";
+        $("loadText").textContent = `Loading the model… ${(doneBytes / 1e9).toFixed(2)} / ${(totalBytes / 1e9).toFixed(2)} GB`;
+      };
+      for (const name of missing) {
+        const bytes = await fetchModel(name, tick);
+        $("loadText").textContent = `Preparing ${name.replace("_", " ")}…`;
+        sessions[name] = await ort.InferenceSession.create(bytes, {
+          executionProviders: ["webgpu"],
+          enableMemPattern: false,
+          enableCpuMemArena: false,
+          extra: { session: { disable_prepacking: "1", use_device_allocator_for_initializers: "1", use_ort_model_bytes_directly: "1", use_ort_model_bytes_for_initializers: "1" } },
+          ...MODELS[name].opt,
+        });
+      }
+      $("loadBox").hidden = true;
+      $("firstRun").hidden = true;
+    }
+
+    // ------------------------------------------------------------------
+    // Diffusion math (SD-Turbo, one Euler step)
+    // ------------------------------------------------------------------
+    const alphasCumprod = (() => {
+      const n = 1000, a = Math.sqrt(0.00085), b = Math.sqrt(0.012);
+      const out = new Float64Array(n);
+      let prod = 1;
+      for (let i = 0; i < n; i++) { const beta = (a + ((b - a) * i) / (n - 1)) ** 2; prod *= 1 - beta; out[i] = prod; }
+      return out;
+    })();
+    const sigmaAt = (t) => Math.sqrt((1 - alphasCumprod[t]) / alphasCumprod[t]);
+
+    function rng(seed) {
+      let s = seed >>> 0;
+      const next = () => { s += 0x6d2b79f5; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+      return () => { let u = 0; while (u === 0) u = next(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * next()); };
+    }
+
+    function imageToTensor(bitmap) {
+      const c = new OffscreenCanvas(512, 512), g = c.getContext("2d");
+      const s = Math.max(512 / bitmap.width, 512 / bitmap.height);
+      const w = bitmap.width * s, h = bitmap.height * s;
+      g.drawImage(bitmap, (512 - w) / 2, (512 - h) / 2, w, h); // center-crop to a square
+      const px = g.getImageData(0, 0, 512, 512).data, n = 512 * 512, out = new Float32Array(3 * n);
+      for (let i = 0; i < n; i++) for (let ch = 0; ch < 3; ch++) out[ch * n + i] = px[i * 4 + ch] / 127.5 - 1;
+      // This encoder takes 16-bit floats.
+      return new ort.Tensor("float16", floatToHalf(out), [1, 3, 512, 512]);
+    }
+
+    // float32 <-> float16 (stored as Uint16Array), for the image encoder
+    const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+    function floatToHalf(arr) {
+      const out = new Uint16Array(arr.length);
+      for (let i = 0; i < arr.length; i++) {
+        f32[0] = arr[i];
+        const x = u32[0], sign = (x >>> 16) & 0x8000;
+        let exp = ((x >>> 23) & 0xff) - 127 + 15, mant = x & 0x7fffff;
+        if (exp <= 0) { out[i] = sign; continue; }
+        if (exp >= 31) { out[i] = sign | 0x7c00; continue; }
+        let h = sign | (exp << 10) | (mant >>> 13);
+        if (mant & 0x1000) h++; // round to nearest
+        out[i] = h;
+      }
+      return out;
+    }
+    function halfToFloat(arr) {
+      const out = new Float32Array(arr.length);
+      for (let i = 0; i < arr.length; i++) {
+        const h = arr[i], sign = h & 0x8000 ? -1 : 1, exp = (h >>> 10) & 0x1f, mant = h & 0x3ff;
+        out[i] = exp === 0 ? sign * 2 ** -14 * (mant / 1024) : exp === 31 ? (mant ? NaN : sign * Infinity) : sign * 2 ** (exp - 15) * (1 + mant / 1024);
+      }
+      return out;
+    }
+
+    function tensorToCanvas(t) {
+      const [, , h, w] = t.dims, n = h * w, d = t.data;
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const g = c.getContext("2d"), img = g.createImageData(w, h);
+      for (let i = 0; i < n; i++) {
+        for (let ch = 0; ch < 3; ch++) img.data[i * 4 + ch] = Math.max(0, Math.min(255, Math.round((d[ch * n + i] / 2 + 0.5) * 255)));
+        img.data[i * 4 + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      return c;
+    }
+
+    async function generate({ prompt, seed, strength, source }) {
+      const randn = rng(seed);
+      const { input_ids } = await tokenizer(prompt, { padding: "max_length", max_length: 77, truncation: true, return_tensor: false });
+      const te = sessions.text_encoder;
+      const enc = await te.run({ [te.inputNames[0]]: new ort.Tensor("int32", Int32Array.from(input_ids), [1, input_ids.length]) });
+      const hidden = enc[te.outputNames[0]];
+
+      const size = 4 * 64 * 64;
+      let t = 999, base = new Float32Array(size);
+      if (source) {
+        // Image-to-image: encode the picture, then add as much noise as the strength asks for.
+        // 0% to 100% maps to timesteps 600 to 980: below 600 this one-step model barely changes anything.
+        t = Math.round(600 + 380 * Math.max(0, Math.min(1, strength)));
+        const ve = sessions.vae_encoder;
+        const lat = (await ve.run({ [ve.inputNames[0]]: imageToTensor(source) }))[ve.outputNames[0]];
+        const ld = lat.type === "float16" ? halfToFloat(lat.data) : lat.data; // first 4 channels = mean
+        for (let i = 0; i < size; i++) base[i] = ld[i] * VAE_SCALE;
+      }
+      const sigma = sigmaAt(t);
+      const noisy = new Float32Array(size), scaled = new Float32Array(size), div = Math.sqrt(sigma * sigma + 1);
+      for (let i = 0; i < size; i++) { noisy[i] = base[i] + randn() * sigma; scaled[i] = noisy[i] / div; }
+
+      const un = sessions.unet;
+      const feed = {};
+      for (const name of un.inputNames) {
+        if (/sample/.test(name) && !/encoder/.test(name)) feed[name] = new ort.Tensor("float32", scaled, [1, 4, 64, 64]);
+        else if (/timestep/.test(name)) feed[name] = new ort.Tensor("int64", BigInt64Array.from([BigInt(t)]), [1]);
+        else feed[name] = hidden;
+      }
+      const eps = (await un.run(feed))[un.outputNames[0]].data;
+
+      const latent = new Float32Array(size);
+      for (let i = 0; i < size; i++) latent[i] = (noisy[i] - sigma * eps[i]) / VAE_SCALE;
+      const vd = sessions.vae_decoder;
+      const img = (await vd.run({ [vd.inputNames[0]]: new ort.Tensor("float32", latent, [1, 4, 64, 64]) }))[vd.outputNames[0]];
+      return tensorToCanvas(img);
+    }
+
+    // ------------------------------------------------------------------
+    // Generate button
+    // ------------------------------------------------------------------
+    function showResult(canvas) {
+      const wrap = document.createElement("div");
+      wrap.className = "result";
+      const url = canvas.toDataURL("image/png");
+      wrap.append(canvas);
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      actions.innerHTML = '<a download="sd-studio.png">Download</a><button type="button">Use as source</button>';
+      actions.querySelector("a").href = url;
+      actions.querySelector("button").addEventListener("click", async () => {
+        document.querySelector('.tabs button[data-mode="i2i"]').click();
+        setSource(await (await fetch(url)).blob());
+      });
+      wrap.append(actions);
+      $("stage").replaceChildren(wrap);
+      return url;
+    }
+
+    let busy = false;
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (busy) return;
+      showError("");
+      const prompt = $("prompt").value.trim();
+      if (!prompt) return showError("Write a prompt first.");
+      if (mode === "i2i" && !sourceImage) return showError("Choose a source image for Image → Image.");
+      busy = true; $("go").disabled = true;
+      try {
+        const needed = ["text_encoder", "unet", "vae_decoder", ...(mode === "i2i" ? ["vae_encoder"] : [])];
+        $("go").textContent = "Loading model…";
+        await ensureLoaded(needed);
+        $("go").textContent = "Generating…";
+        $("stage").innerHTML = '<div class="empty"><div class="spinner"></div>Creating your image on your device…</div>';
+        const seed = Number($("seed").value) || Math.floor(Math.random() * 2 ** 31);
+        const t0 = performance.now();
+        const canvas = await generate({ prompt, seed, strength: Number($("strength").value), source: mode === "i2i" ? sourceImage : null });
+        const url = showResult(canvas);
+        const thumb = document.createElement("img");
+        thumb.src = url; thumb.title = `${prompt} (seed ${seed}, ${((performance.now() - t0) / 1000).toFixed(1)}s)`;
+        thumb.addEventListener("click", () => { const c = document.createElement("canvas"); const i = new Image(); i.onload = () => { c.width = i.width; c.height = i.height; c.getContext("2d").drawImage(i, 0, 0); showResult(c); }; i.src = url; });
+        $("history").prepend(thumb);
+        window.__lastResult = { seed, ms: performance.now() - t0 };
+      } catch (err) {
+        console.error(err);
+        showError(err?.message || String(err));
+        $("stage").innerHTML = '<div class="empty">Your image will appear here.</div>';
+      } finally {
+        busy = false; $("go").disabled = false; $("go").textContent = "Generate";
+      }
+    });
+  </script>
+</body>
+</html>
