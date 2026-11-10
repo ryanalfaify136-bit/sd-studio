@@ -48,6 +48,12 @@
     .history { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
     .history img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
     .history img:hover { border-color: var(--ink); }
+    .tabs small { font-weight: 400; font-size: 11px; }
+    select { width: 100%; padding: 10px 12px; font: inherit; font-size: 14px; border: 1px solid #d6d3dc; border-radius: 10px; background: #fff; }
+    body:not(.cloud) .cloud-only { display: none; }
+    body.cloud .device-only { display: none; }
+    body.cloud .device-i2i { display: none !important; }
+    body.i2i .t2i-only { display: none; }
     .i2i-only { display: none; }
     body.i2i .i2i-only { display: block; }
     #gate { min-height: 100vh; display: grid; place-items: center; }
@@ -71,15 +77,31 @@
 
   <div id="app" hidden>
     <header>
-      <h1>SD Studio <small>· Stable Diffusion running in your browser</small></h1>
+      <h1>SD Studio <small>· free AI images</small></h1>
       <button id="lock" type="button">Lock</button>
     </header>
 
     <main>
       <form class="panel" id="form">
-        <div class="tabs">
+        <label style="margin-top:0">Where to make the image</label>
+        <div class="tabs engines">
+          <button type="button" class="active" data-engine="cloud">Free cloud GPU<br /><small>any phone</small></button>
+          <button type="button" data-engine="device">This device<br /><small>needs a GPU</small></button>
+        </div>
+        <div class="tabs modes">
           <button type="button" class="active" data-mode="t2i">Text → Image</button>
           <button type="button" data-mode="i2i">Image → Image</button>
+        </div>
+
+        <div class="cloud-only t2i-only">
+          <label for="ratio">Shape</label>
+          <select id="ratio">
+            <option value="1024x1024">Square 1:1</option>
+            <option value="1344x768">Wide 16:9</option>
+            <option value="768x1344">Tall 9:16 (phone wallpaper)</option>
+            <option value="1152x896">Landscape 4:3</option>
+            <option value="896x1152">Portrait 3:4</option>
+          </select>
         </div>
 
         <div class="i2i-only">
@@ -93,9 +115,9 @@
 
         <label for="prompt">Prompt</label>
         <textarea id="prompt" placeholder="A cinematic photo of a knight at sunset, highly detailed, soft rim light"></textarea>
-        <div class="hint">Describe it in English. Short, concrete prompts work best with this fast model.</div>
+        <div class="hint">Describe it in English. Short, concrete descriptions work best.</div>
 
-        <div class="i2i-only">
+        <div class="i2i-only device-i2i">
           <label for="strength">How much to change the image: <span id="strengthVal">50%</span></label>
           <input type="range" id="strength" min="0" max="1" step="0.05" value="0.5" />
           <div class="hint">Low keeps your picture close to the original; high follows the prompt more. Try a few values with the same seed.</div>
@@ -104,14 +126,25 @@
         <label for="seed">Seed (0 = random)</label>
         <input type="number" id="seed" value="0" min="0" />
 
-        <button class="go" id="go" type="submit">Load model &amp; generate</button>
+        <button class="go" id="go" type="submit">Generate</button>
         <div id="loadBox" hidden>
           <div class="hint" id="loadText">Downloading the model…</div>
           <div class="bar"><div id="loadBar"></div></div>
         </div>
-        <div class="note info" id="firstRun">
+        <div class="note info device-only" id="firstRun">
           The first time, your browser downloads the model once (about 2.5 GB) and keeps it for next time.
           Images are made on your own device, 512×512, free and private: nothing is uploaded.
+        </div>
+        <div class="note info cloud-only">
+          Made on free GPUs at Hugging Face: <b>FLUX.1-schnell</b> for text → image, <b>FLUX.1 Kontext</b> for image → image
+          (describe the change, e.g. “make it a watercolor painting”). No cost. Each visitor gets a small free GPU allowance per day.
+          Your prompt and picture are sent to Hugging Face to make the image.
+          <details style="margin-top:8px">
+            <summary>More free images per day (optional)</summary>
+            <div class="hint" style="margin-top:6px">Create a free account at huggingface.co, then Settings → Access Tokens → Create new token → type <b>Read</b>.
+              Paste it here. It is saved only in this browser on this device.</div>
+            <input type="password" id="hfToken" placeholder="hf_…" autocomplete="off" style="margin-top:6px" />
+          </details>
         </div>
         <div class="note err" id="error" hidden></div>
       </form>
@@ -164,10 +197,20 @@
     // UI
     // ------------------------------------------------------------------
     let mode = "t2i";
-    let sourceImage = null; // ImageBitmap
-    document.querySelectorAll(".tabs button").forEach((b) =>
+    let engine = "cloud";
+    document.body.classList.add("cloud");
+    document.querySelectorAll(".tabs.engines button").forEach((b) =>
       b.addEventListener("click", () => {
-        document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+        document.querySelectorAll(".tabs.engines button").forEach((x) => x.classList.toggle("active", x === b));
+        engine = b.dataset.engine;
+        document.body.classList.toggle("cloud", engine === "cloud");
+        showError("");
+      })
+    );
+    let sourceImage = null; // ImageBitmap
+    document.querySelectorAll(".tabs.modes button").forEach((b) =>
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".tabs.modes button").forEach((x) => x.classList.toggle("active", x === b));
         mode = b.dataset.mode;
         document.body.classList.toggle("i2i", mode === "i2i");
       })
@@ -392,6 +435,78 @@
       return url;
     }
 
+    // ------------------------------------------------------------------
+    // Free cloud GPU engine: public Hugging Face Spaces (ZeroGPU), called from the visitor's browser
+    // ------------------------------------------------------------------
+    const GRADIO_URL = "https://cdn.jsdelivr.net/npm/@gradio/client@2.7.2/dist/browser.js";
+    const T2I_SPACE = "black-forest-labs/FLUX.1-schnell";
+    const I2I_SPACE = "black-forest-labs/FLUX.1-Kontext-Dev";
+    let gradio;
+    const clients = {};
+    try { $("hfToken").value = localStorage.getItem("sds-hf-token") || ""; } catch {}
+    $("hfToken").addEventListener("change", () => {
+      const v = $("hfToken").value.trim();
+      try { v ? localStorage.setItem("sds-hf-token", v) : localStorage.removeItem("sds-hf-token"); } catch {}
+      for (const k in clients) delete clients[k];
+    });
+
+    async function space(id) {
+      if (!gradio) gradio = await import(GRADIO_URL);
+      if (!clients[id]) {
+        const token = $("hfToken").value.trim();
+        clients[id] = await gradio.Client.connect(id, token.startsWith("hf_") ? { token } : {});
+      }
+      return clients[id];
+    }
+
+    function friendlyCloudError(err) {
+      const msg = String(err?.message || err || "");
+      if (/quota/i.test(msg)) {
+        const when = (msg.match(/Try again in ([0-9:]+)/) || [])[1];
+        return "Today's free GPU allowance is used up" + (when ? ` (it refills in ${when})` : "") +
+          ". Add a free Hugging Face token under “More free images per day” for more, or use “This device” on a computer.";
+      }
+      if (/NSFW|safety|blocked/i.test(msg)) return "That prompt was blocked by the model's safety filter. Try different wording.";
+      if (/fetch|network|connect/i.test(msg)) return "Couldn't reach the free GPU service. Check your internet and try again.";
+      return "The free GPU service couldn't make this image: " + msg.slice(0, 200);
+    }
+
+    async function urlToCanvas(file) {
+      const url = file?.url || file?.path || file;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Could not download the image (${res.status}).`);
+      const bmp = await createImageBitmap(await res.blob());
+      const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
+      c.getContext("2d").drawImage(bmp, 0, 0);
+      return c;
+    }
+
+    async function generateCloud({ prompt, seed, size, source }) {
+      try {
+        if (source) {
+          const c = await space(I2I_SPACE);
+          const blob = await new Promise((ok) => sourceCanvas(source).toBlob(ok, "image/png"));
+          const r = await c.predict("/infer", { input_image: gradio.handle_file(blob), prompt, seed, randomize_seed: false, guidance_scale: 2.5, steps: 20 });
+          return await urlToCanvas(r.data[0]);
+        }
+        const [w, h] = size.split("x").map(Number);
+        const c = await space(T2I_SPACE);
+        const r = await c.predict("/infer", { prompt, seed, randomize_seed: false, width: w, height: h, num_inference_steps: 4 });
+        return await urlToCanvas(r.data[0]);
+      } catch (err) {
+        throw new Error(friendlyCloudError(err));
+      }
+    }
+
+    // Downscale big phone photos before sending them (max 1024 px on the long side).
+    function sourceCanvas(bitmap) {
+      const s = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(bitmap.width * s); c.height = Math.round(bitmap.height * s);
+      c.getContext("2d").drawImage(bitmap, 0, 0, c.width, c.height);
+      return c;
+    }
+
     let busy = false;
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -402,14 +517,23 @@
       if (mode === "i2i" && !sourceImage) return showError("Choose a source image for Image → Image.");
       busy = true; $("go").disabled = true;
       try {
-        const needed = ["text_encoder", "unet", "vae_decoder", ...(mode === "i2i" ? ["vae_encoder"] : [])];
-        $("go").textContent = "Loading model…";
-        await ensureLoaded(needed);
-        $("go").textContent = "Generating…";
-        $("stage").innerHTML = '<div class="empty"><div class="spinner"></div>Creating your image on your device…</div>';
         const seed = Number($("seed").value) || Math.floor(Math.random() * 2 ** 31);
-        const t0 = performance.now();
-        const canvas = await generate({ prompt, seed, strength: Number($("strength").value), source: mode === "i2i" ? sourceImage : null });
+        let canvas, t0;
+        if (engine === "cloud") {
+          $("go").textContent = "Generating…";
+          $("stage").innerHTML = '<div class="empty"><div class="spinner"></div>Creating your image on a free cloud GPU… ' +
+            (mode === "i2i" ? "about 20–40 seconds." : "usually a few seconds.") + '</div>';
+          t0 = performance.now();
+          canvas = await generateCloud({ prompt, seed: seed % 2147483647, size: $("ratio").value, source: mode === "i2i" ? sourceImage : null });
+        } else {
+          const needed = ["text_encoder", "unet", "vae_decoder", ...(mode === "i2i" ? ["vae_encoder"] : [])];
+          $("go").textContent = "Loading model…";
+          await ensureLoaded(needed);
+          $("go").textContent = "Generating…";
+          $("stage").innerHTML = '<div class="empty"><div class="spinner"></div>Creating your image on your device…</div>';
+          t0 = performance.now();
+          canvas = await generate({ prompt, seed, strength: Number($("strength").value), source: mode === "i2i" ? sourceImage : null });
+        }
         const url = showResult(canvas);
         const thumb = document.createElement("img");
         thumb.src = url; thumb.title = `${prompt} (seed ${seed}, ${((performance.now() - t0) / 1000).toFixed(1)}s)`;
