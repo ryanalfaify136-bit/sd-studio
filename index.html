@@ -83,24 +83,23 @@
 
     <main>
       <form class="panel" id="form">
-        <label style="margin-top:0">Where to make the image</label>
-        <div class="tabs engines">
-          <button type="button" class="active" data-engine="cloud">Free cloud GPU<br /><small>any phone</small></button>
-          <button type="button" data-engine="device">This device<br /><small>needs a GPU</small></button>
-        </div>
         <div class="tabs modes">
           <button type="button" class="active" data-mode="t2i">Text → Image</button>
           <button type="button" data-mode="i2i">Image → Image</button>
         </div>
 
-        <div class="cloud-only t2i-only">
+        <label for="model" style="margin-top:0">Model</label>
+        <select id="model"></select>
+        <div class="hint" id="modelInfo"></div>
+
+        <div class="t2i-only" id="ratioBox">
           <label for="ratio">Shape</label>
           <select id="ratio">
-            <option value="1024x1024">Square 1:1</option>
-            <option value="1344x768">Wide 16:9</option>
-            <option value="768x1344">Tall 9:16 (phone wallpaper)</option>
-            <option value="1152x896">Landscape 4:3</option>
-            <option value="896x1152">Portrait 3:4</option>
+            <option value="1:1">Square 1:1</option>
+            <option value="16:9">Wide 16:9</option>
+            <option value="9:16">Tall 9:16 (phone wallpaper)</option>
+            <option value="4:3">Landscape 4:3</option>
+            <option value="3:4">Portrait 3:4</option>
           </select>
         </div>
 
@@ -136,9 +135,9 @@
           Images are made on your own device, 512×512, free and private: nothing is uploaded.
         </div>
         <div class="note info cloud-only">
-          Made on free GPUs at Hugging Face: <b>FLUX.1-schnell</b> for text → image, <b>FLUX.1 Kontext</b> for image → image
-          (describe the change, e.g. “make it a watercolor painting”). No cost. Each visitor gets a small free GPU allowance per day.
-          Your prompt and picture are sent to Hugging Face to make the image.
+          Cloud models run on free GPUs at Hugging Face: no cost, works on any phone. Each visitor gets a small free GPU
+          allowance per day; ⚡ fast models use less of it than ★ quality models; 🔑 models need a free Hugging Face token (below). Your prompt and picture are sent to
+          Hugging Face to make the image.
           <details style="margin-top:8px">
             <summary>More free images per day (optional)</summary>
             <div class="hint" style="margin-top:6px">Create a free account at huggingface.co, then Settings → Access Tokens → Create new token → type <b>Read</b>.
@@ -198,21 +197,72 @@
     // ------------------------------------------------------------------
     let mode = "t2i";
     let engine = "cloud";
-    document.body.classList.add("cloud");
-    document.querySelectorAll(".tabs.engines button").forEach((b) =>
-      b.addEventListener("click", () => {
-        document.querySelectorAll(".tabs.engines button").forEach((x) => x.classList.toggle("active", x === b));
-        engine = b.dataset.engine;
-        document.body.classList.toggle("cloud", engine === "cloud");
-        showError("");
-      })
-    );
+    let modelId = "";
+
+    // Every image model on the site. Cloud models are public Hugging Face Spaces (free ZeroGPU).
+    // ratio: how the model takes the image shape ("wh" = width/height in pixels, "ar" = "16:9" text, null = fixed).
+    const CATALOG = [
+      { id: "flux-schnell", mode: "t2i", group: "Free cloud GPU", name: "⚡ FLUX.1 schnell", info: "Black Forest Labs. Fast, sharp, great all-rounder.", space: "black-forest-labs/FLUX.1-schnell", ep: "/infer", ratio: "wh", max: 1024,
+        args: (o) => ({ prompt: o.prompt, seed: o.seed, randomize_seed: false, width: o.w, height: o.h, num_inference_steps: 4 }) },
+      { id: "z-image-turbo", mode: "t2i", group: "Free cloud GPU", name: "⚡ Z-Image Turbo", info: "Alibaba Tongyi. Fast photoreal images, good with text in images.", space: "Tongyi-MAI/Z-Image-Turbo", ep: "/generate", ratio: "zimg",
+        args: (o) => ({ prompt: o.prompt, resolution: o.zres, seed: o.seed, steps: 8, random_seed: false }), pick: (d) => d[0]?.[0]?.image ?? d[0]?.[0] },
+      { id: "sd35-turbo", mode: "t2i", group: "Free cloud GPU", name: "⚡ Stable Diffusion 3.5 Large Turbo", info: "Stability AI. Fast Stable Diffusion.", space: "stabilityai/stable-diffusion-3.5-large-turbo", ep: "/infer", ratio: "wh", max: 1024,
+        args: (o) => ({ prompt: o.prompt, negative_prompt: o.neg, seed: o.seed, randomize_seed: false, width: o.w, height: o.h, guidance_scale: 0, num_inference_steps: 4 }) },
+      { id: "flux-dev", mode: "t2i", group: "Free cloud GPU", name: "★ FLUX.1 dev", info: "Black Forest Labs. Higher quality than schnell, slower.", space: "black-forest-labs/FLUX.1-dev", ep: "/infer", ratio: "wh", max: 1024,
+        args: (o) => ({ prompt: o.prompt, seed: o.seed, randomize_seed: false, width: o.w, height: o.h, guidance_scale: 3.5, num_inference_steps: 28 }) },
+      { id: "flux2-dev", mode: "t2i", group: "Free cloud GPU", name: "★ FLUX.2 dev", info: "Black Forest Labs' newest open model. Top quality, slow.", space: "black-forest-labs/FLUX.2-dev", ep: "/infer", ratio: "wh", max: 1024,
+        args: (o) => ({ prompt: o.prompt, input_images: [], seed: o.seed, randomize_seed: false, width: o.w, height: o.h, num_inference_steps: 28, guidance_scale: 4, prompt_upsampling: false }) },
+      { id: "sd35-large", mode: "t2i", group: "Free cloud GPU", name: "★ Stable Diffusion 3.5 Large", info: "Stability AI's best open Stable Diffusion.", space: "stabilityai/stable-diffusion-3.5-large", ep: "/infer", ratio: "wh", max: 1024,
+        args: (o) => ({ prompt: o.prompt, negative_prompt: o.neg, seed: o.seed, randomize_seed: false, width: o.w, height: o.h, guidance_scale: 4.5, num_inference_steps: 40 }) },
+      { id: "sd3-medium", mode: "t2i", group: "Free cloud GPU", name: "Stable Diffusion 3 Medium", info: "Stability AI. Lighter Stable Diffusion 3.", space: "stabilityai/stable-diffusion-3-medium", ep: "/infer", ratio: "wh", max: 1024,
+        args: (o) => ({ prompt: o.prompt, negative_prompt: o.neg, seed: o.seed, randomize_seed: false, width: o.w, height: o.h, guidance_scale: 5, num_inference_steps: 28 }) },
+      { id: "sdxl", mode: "t2i", group: "Free cloud GPU", name: "Stable Diffusion XL", info: "Stability AI's classic SDXL 1.0.", space: "hysts/SDXL", ep: "/predict", ratio: "wh", max: 1024,
+        args: (o) => ({ prompt: o.prompt, negative_prompt: o.neg, use_negative_prompt: !!o.neg, seed: o.seed, width: o.w, height: o.h, guidance_scale_base: 5, num_inference_steps_base: 25, apply_refiner: false }) },
+      { id: "qwen-image", mode: "t2i", group: "Free cloud GPU", name: "★ Qwen-Image 🔑", info: "Alibaba Qwen. Excellent at writing text inside images. Needs a lot of GPU time: add a free Hugging Face token below for it to work.", space: "Qwen/Qwen-Image", ep: "/infer", ratio: "ar",
+        args: (o) => ({ prompt: o.prompt, seed: o.seed, randomize_seed: false, aspect_ratio: o.ar, prompt_enhance: false }) },
+      { id: "hidream", mode: "t2i", group: "Free cloud GPU", name: "★ HiDream-I1 Dev", info: "HiDream.ai. Detailed, artistic images.", space: "HiDream-ai/HiDream-I1-Dev", ep: "/generate_with_status", ratio: "ar",
+        args: (o) => ({ prompt: o.prompt, aspect_ratio: o.ar, seed: o.seed }) },
+      { id: "sd-turbo-device", mode: "t2i", group: "On this device (needs a GPU, no limit)", name: "SD-Turbo (runs in your browser)", info: "Stable Diffusion Turbo on your own graphics chip. Unlimited and private; downloads 2.5 GB once; 512×512.", device: true },
+
+      { id: "flux-kontext", mode: "i2i", group: "Free cloud GPU", name: "★ FLUX.1 Kontext", info: "Black Forest Labs. Edits your photo by instruction, e.g. “make it a watercolor painting”.", space: "black-forest-labs/FLUX.1-Kontext-Dev", ep: "/infer",
+        args: (o) => ({ input_image: o.file, prompt: o.prompt, seed: o.seed, randomize_seed: false, guidance_scale: 2.5, steps: 20 }) },
+      { id: "qwen-edit", mode: "i2i", group: "Free cloud GPU", name: "★ Qwen-Image-Edit 🔑", info: "Alibaba Qwen. Precise edits, including changing text in a picture. Very heavy: may only work with a Hugging Face token, or a paid Hugging Face plan.", space: "Qwen/Qwen-Image-Edit", ep: "/infer",
+        args: (o) => ({ image: o.file, prompt: o.prompt, seed: o.seed, randomize_seed: false, true_guidance_scale: 4, rewrite_prompt: false }) },
+      { id: "flux2-edit", mode: "i2i", group: "Free cloud GPU", name: "★ FLUX.2 dev (edit)", info: "Black Forest Labs' newest model, using your photo as reference. Slow.", space: "black-forest-labs/FLUX.2-dev", ep: "/infer", useSize: true,
+        args: (o) => ({ prompt: o.prompt, input_images: [{ image: o.file, caption: null }], seed: o.seed, randomize_seed: false, width: o.w, height: o.h, num_inference_steps: 28, guidance_scale: 4, prompt_upsampling: false }) },
+      { id: "sd-turbo-device-i2i", mode: "i2i", group: "On this device (needs a GPU, no limit)", name: "SD-Turbo image-to-image (runs in your browser)", info: "Restyles your picture on your own graphics chip. Use the strength slider.", device: true },
+    ];
+
+    function fillModels() {
+      const sel = $("model");
+      sel.innerHTML = "";
+      const groups = {};
+      for (const m of CATALOG.filter((x) => x.mode === mode)) {
+        if (!groups[m.group]) { groups[m.group] = document.createElement("optgroup"); groups[m.group].label = m.group; sel.append(groups[m.group]); }
+        const o = document.createElement("option"); o.value = m.id; o.textContent = m.name; groups[m.group].append(o);
+      }
+      let saved = null; try { saved = localStorage.getItem("sds-model-" + mode); } catch {}
+      if (saved && CATALOG.some((x) => x.id === saved && x.mode === mode)) sel.value = saved;
+      onModel();
+    }
+    function onModel() {
+      modelId = $("model").value;
+      const m = CATALOG.find((x) => x.id === modelId);
+      engine = m.device ? "device" : "cloud";
+      document.body.classList.toggle("cloud", engine === "cloud");
+      $("modelInfo").textContent = m.info;
+      $("ratioBox").style.display = mode === "t2i" && !m.device && m.ratio !== null ? "" : "none";
+      try { localStorage.setItem("sds-model-" + mode, modelId); } catch {}
+      showError("");
+    }
+    $("model").addEventListener("change", onModel);
     let sourceImage = null; // ImageBitmap
     document.querySelectorAll(".tabs.modes button").forEach((b) =>
       b.addEventListener("click", () => {
         document.querySelectorAll(".tabs.modes button").forEach((x) => x.classList.toggle("active", x === b));
         mode = b.dataset.mode;
         document.body.classList.toggle("i2i", mode === "i2i");
+        fillModels();
       })
     );
     $("strength").addEventListener("input", (e) => ($("strengthVal").textContent = Math.round(Number(e.target.value) * 100) + "%"));
@@ -439,8 +489,6 @@
     // Free cloud GPU engine: public Hugging Face Spaces (ZeroGPU), called from the visitor's browser
     // ------------------------------------------------------------------
     const GRADIO_URL = "https://cdn.jsdelivr.net/npm/@gradio/client@2.7.2/dist/browser.js";
-    const T2I_SPACE = "black-forest-labs/FLUX.1-schnell";
-    const I2I_SPACE = "black-forest-labs/FLUX.1-Kontext-Dev";
     let gradio;
     const clients = {};
     try { $("hfToken").value = localStorage.getItem("sds-hf-token") || ""; } catch {}
@@ -464,9 +512,10 @@
       if (/quota/i.test(msg)) {
         const when = (msg.match(/Try again in ([0-9:]+)/) || [])[1];
         return "Today's free GPU allowance is used up" + (when ? ` (it refills in ${when})` : "") +
-          ". Add a free Hugging Face token under “More free images per day” for more, or use “This device” on a computer.";
+          ". Try a ⚡ fast model, add a free Hugging Face token under “More free images per day”, or use the on-device model on a computer.";
       }
       if (/NSFW|safety|blocked/i.test(msg)) return "That prompt was blocked by the model's safety filter. Try different wording.";
+      if (/could not be accessed|401|404|sleeping|paused|runtime error/i.test(msg)) return "This model's free server is offline right now. Pick another model from the list.";
       if (/fetch|network|connect/i.test(msg)) return "Couldn't reach the free GPU service. Check your internet and try again.";
       return "The free GPU service couldn't make this image: " + msg.slice(0, 200);
     }
@@ -481,18 +530,31 @@
       return c;
     }
 
-    async function generateCloud({ prompt, seed, size, source }) {
+    const RATIOS = { "1:1": [1, 1], "16:9": [16, 9], "9:16": [9, 16], "4:3": [4, 3], "3:4": [3, 4] };
+    const ZIMG = { "1:1": "1024x1024 ( 1:1 )", "16:9": "1280x720 ( 16:9 )", "9:16": "720x1280 ( 9:16 )", "4:3": "1152x864 ( 4:3 )", "3:4": "864x1152 ( 3:4 )" };
+    function sizeFor(ratio, max = 1344) {
+      const [a, b] = RATIOS[ratio] || [1, 1];
+      const k = a === b ? 1024 / a : max / Math.max(a, b);
+      const r64 = (v) => Math.max(256, Math.round(v / 64) * 64);
+      return [r64(a * k), r64(b * k)];
+    }
+
+    async function generateCloud({ model, prompt, seed, ratio, source }) {
       try {
+        const c = await space(model.space);
+        let w, h;
         if (source) {
-          const c = await space(I2I_SPACE);
-          const blob = await new Promise((ok) => sourceCanvas(source).toBlob(ok, "image/png"));
-          const r = await c.predict("/infer", { input_image: gradio.handle_file(blob), prompt, seed, randomize_seed: false, guidance_scale: 2.5, steps: 20 });
-          return await urlToCanvas(r.data[0]);
+          const src = sourceCanvas(source);
+          [w, h] = [Math.round(src.width / 16) * 16, Math.round(src.height / 16) * 16];
+          var file = gradio.handle_file(await new Promise((ok) => src.toBlob(ok, "image/png")));
+        } else {
+          [w, h] = sizeFor(ratio, model.max);
         }
-        const [w, h] = size.split("x").map(Number);
-        const c = await space(T2I_SPACE);
-        const r = await c.predict("/infer", { prompt, seed, randomize_seed: false, width: w, height: h, num_inference_steps: 4 });
-        return await urlToCanvas(r.data[0]);
+        const args = model.args({ prompt, neg: $("neg")?.value || "", seed, w, h, ar: ratio, zres: ZIMG[ratio] || ZIMG["1:1"], file });
+        const r = await c.predict(model.ep, args);
+        const out = model.pick ? model.pick(r.data) : r.data[0];
+        if (!out) throw new Error("The model returned no image.");
+        return await urlToCanvas(out);
       } catch (err) {
         throw new Error(friendlyCloudError(err));
       }
@@ -522,9 +584,10 @@
         if (engine === "cloud") {
           $("go").textContent = "Generating…";
           $("stage").innerHTML = '<div class="empty"><div class="spinner"></div>Creating your image on a free cloud GPU… ' +
-            (mode === "i2i" ? "about 20–40 seconds." : "usually a few seconds.") + '</div>';
+            (/⚡/.test(CATALOG.find((x) => x.id === modelId).name) ? "usually a few seconds." : "this model can take up to a minute.") + '</div>';
           t0 = performance.now();
-          canvas = await generateCloud({ prompt, seed: seed % 2147483647, size: $("ratio").value, source: mode === "i2i" ? sourceImage : null });
+          const model = CATALOG.find((x) => x.id === modelId);
+          canvas = await generateCloud({ model, prompt, seed: seed % 2147483647, ratio: $("ratio").value, source: mode === "i2i" ? sourceImage : null });
         } else {
           const needed = ["text_encoder", "unet", "vae_decoder", ...(mode === "i2i" ? ["vae_encoder"] : [])];
           $("go").textContent = "Loading model…";
@@ -548,6 +611,8 @@
         busy = false; $("go").disabled = false; $("go").textContent = "Generate";
       }
     });
+
+    fillModels();
   </script>
 </body>
 </html>
